@@ -107,21 +107,47 @@ func (c *{{ .Type }}) DecodeColumn(r *Reader, rows int) error {
   }
   *c = v
   {{- else }}
-  v := *c
-  // Move bound check out of loop.
-  //
-  // See https://github.com/golang/go/issues/30945.
-  _ = data[len(data)-size]
-  for i := 0; i <= len(data)-size; i += size {
-    v = append(v,
-    {{- if .IsFloat }}
-      math.{{ .Name }}frombits(bin.{{ .BinFunc }}(data[i:i+size])),
-    {{- else if .Cast }}
-     {{ .ElemType }}({{ .BinGet }}(data[i:i+size])),
-    {{- else }}
-      {{ .BinGet }}(data[i:i+size]),
-    {{- end }}
-    )
+  v := append(*c, make([]{{ .ElemType }}, rows)...)
+
+  var (
+  	n = 0
+  	i = 0
+  )
+  {{- $unroll := 4 }}
+  const (
+  	unroll = {{ $unroll }}
+  	unrollByteSize = size * unroll
+  )
+  if len(data) > unrollByteSize {
+      _ = data[:len(data)-unrollByteSize]
+	  for i = 0; i <= len(data)-unrollByteSize; i += unrollByteSize {
+  		src := [unroll]{{ .ElemType }}{
+	  	}
+		{{- range $i, $_ := times $unroll }}{{ $idx := sub (sub $unroll $i) 1 }}
+			const offset{{ $i }} = 0{{ range $_ := times $idx }}+size{{ end }}
+			src[{{ $idx }}] =
+			{{- if $.IsFloat }}
+				math.{{ $.Name }}frombits(bin.{{ $.BinFunc }}(data[i+offset{{ $i }}:i+offset{{ $i }}+size:i+offset{{ $i }}+size]))
+			{{- else if $.Cast }}
+				{{ $.ElemType }}({{ $.BinGet }}(data[i+offset{{ $i }}:i+offset{{ $i }}+size:i+offset{{ $i }}+size]))
+			{{- else }}
+				{{ $.BinGet }}(data[i+offset{{ $i }}:i+offset{{ $i }}+size:i+offset{{ $i }}+size])
+			{{- end }}
+		{{- end }}
+  		copy(v[n:n+unroll:n+unroll], src[:])
+		n += unroll
+	  }
+  }
+  for _ = i; i < len(data); i += size {
+		v[n] =
+        {{- if $.IsFloat }}
+			math.{{ $.Name }}frombits(bin.{{ $.BinFunc }}(data[i:]))
+        {{- else if $.Cast }}
+            {{ $.ElemType }}({{ $.BinGet }}(data[i:]))
+        {{- else }}
+            {{ $.BinGet }}(data[i:])
+        {{- end }}
+	  n++
   }
   *c = v
   {{- end }}

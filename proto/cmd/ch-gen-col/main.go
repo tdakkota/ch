@@ -26,9 +26,10 @@ const (
 )
 
 type Variant struct {
-	Kind   Kind
-	Signed bool
-	Bits   int
+	Kind     Kind
+	Signed   bool
+	Bits     int
+	NoUnsafe bool
 }
 
 type Variants []Variant
@@ -214,9 +215,17 @@ func write(name string, v interface{}, t *template.Template) error {
 
 func run() error {
 	var (
-		tpl      = template.Must(template.New("main").Parse(mainTemplate))
-		tplInfer = template.Must(template.New("main").Parse(inferTemplate))
-		tplTest  = template.Must(template.New("main").Parse(testTemplate))
+		funcs = template.FuncMap{
+			"times": func(n int) []struct{} {
+				return make([]struct{}, n)
+			},
+			"sub": func(a, b int) int {
+				return a - b
+			},
+		}
+		tpl      = template.Must(template.New("main").Funcs(funcs).Parse(mainTemplate))
+		tplInfer = template.Must(template.New("main").Funcs(funcs).Parse(inferTemplate))
+		tplTest  = template.Must(template.New("main").Funcs(funcs).Parse(testTemplate))
 	)
 	variants := Variants{
 		{ // Float32
