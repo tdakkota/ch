@@ -73,15 +73,40 @@ func (c *ColDecimal128) DecodeColumn(r *Reader, rows int) error {
 	if err != nil {
 		return errors.Wrap(err, "read")
 	}
-	v := *c
-	// Move bound check out of loop.
-	//
-	// See https://github.com/golang/go/issues/30945.
-	_ = data[len(data)-size]
-	for i := 0; i <= len(data)-size; i += size {
-		v = append(v,
-			Decimal128(binUInt128(data[i:i+size])),
-		)
+	v := append(*c, make([]Decimal128, rows)...)
+
+	var (
+		n = 0
+		i = 0
+	)
+	const (
+		unroll         = 4
+		unrollByteSize = size * unroll
+	)
+	if len(data) > unrollByteSize {
+		_ = data[:len(data)-unrollByteSize]
+		for i = 0; i <= len(data)-unrollByteSize; i += unrollByteSize {
+			src := [unroll]Decimal128{}
+			const offset0 = 0 + size + size + size
+			src[3] =
+				Decimal128(binUInt128(data[i+offset0 : i+offset0+size : i+offset0+size]))
+			const offset1 = 0 + size + size
+			src[2] =
+				Decimal128(binUInt128(data[i+offset1 : i+offset1+size : i+offset1+size]))
+			const offset2 = 0 + size
+			src[1] =
+				Decimal128(binUInt128(data[i+offset2 : i+offset2+size : i+offset2+size]))
+			const offset3 = 0
+			src[0] =
+				Decimal128(binUInt128(data[i+offset3 : i+offset3+size : i+offset3+size]))
+			copy(v[n:n+unroll:n+unroll], src[:])
+			n += unroll
+		}
+	}
+	for _ = i; i < len(data); i += size {
+		v[n] =
+			Decimal128(binUInt128(data[i:]))
+		n++
 	}
 	*c = v
 	return nil
